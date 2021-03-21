@@ -1,4 +1,4 @@
-import React, {useEffect, useState, useRef} from 'react'
+import React, {useEffect, useState, useRef, useContext,createRef} from 'react'
 import io from 'socket.io-client'
 import styled from "styled-components";
  
@@ -73,16 +73,19 @@ const PartnerMessage = styled.div`
 
 const Room = (props) => {
     
-    const userVideo = useRef()
-    const partnerVideo = useRef()
-    const peerRef = useRef()
+    const userVideo = useRef()    
+    const peersRef = useRef([])
     const socketRef = useRef()
-    const otherUser = useRef()
+    const otherUsers = useRef([])
     const userStream = useRef()
     const sendChannel = useRef()
     const [text, setText] = useState("");
+    const [partnerVideos, setPartnerVideos] = useState({})
     const [messages, setMessages] = useState([])
 
+    useEffect(() => {
+            Object.values(partnerVideos).map(video => video.ref.current.srcObject = video.stream)
+    }, [partnerVideos])
     useEffect(() => {
         navigator.mediaDevices.getUserMedia({ audio: true, video: true }).then(stream => {
             userVideo.current.srcObject = stream;
@@ -91,14 +94,42 @@ const Room = (props) => {
             socketRef.current = io.connect("/");
             socketRef.current.emit("join room", props.match.params.roomID);
 
-            socketRef.current.on('other user', userID => {
-                callUser(userID);
-                otherUser.current = userID;
+            socketRef.current.on('other user', users => {
+                users.map(userID => {
+                    if(!otherUsers.current.includes(userID)) callUser(userID)
+                });
+
+                //setPartnerVideos(pvideos => pvideos.splice({id:userID, stream : e.streams[0], ref: createRef() }))
+
+                otherUsers.current = users;
             });
 
             socketRef.current.on("user joined", userID => {
-                otherUser.current = userID;
+                otherUsers.current.push(userID);
             });
+
+            socketRef.current.on('user gone', userID => {
+                otherUsers.current.splice(otherUsers.current.indexOf(userID),1);
+                if(peersRef.current[userID])
+                peersRef.current[userID].close()
+                delete peersRef.current[userID]
+
+                setPartnerVideos(pvideos =>  {
+                    const p = pvideos
+                    delete p[userID]
+                    return p
+                })
+
+                setPartnerVideos(pvideos =>  {
+                    const p = {}
+        
+                    Object.keys(pvideos).map(key => {
+                        if(key !== userID)
+                            p[key] = pvideos[key]
+                    }) 
+                    return p
+                })
+            });            
 
             socketRef.current.on("offer", handleRecieveCall);
 
@@ -110,10 +141,10 @@ const Room = (props) => {
     }, []);
 
     function callUser(userID) {
-        peerRef.current = createPeer(userID);
-        userStream.current.getTracks().forEach(track => peerRef.current.addTrack(track, userStream.current));
-        sendChannel.current = peerRef.current.createDataChannel('sendChannel')
-        sendChannel.current.onmessage = handleRecieveMessage
+        peersRef.current[userID] = createPeer(userID);
+        userStream.current.getTracks().forEach(track => peersRef.current[userID].addTrack(track, userStream.current));
+        //sendChannel.current = peersRef.current[userID].createDataChannel('sendChannel')
+        //sendChannel.current.onmessage = handleRecieveMessage
     }
 
     function createPeer(userID) {
@@ -130,8 +161,8 @@ const Room = (props) => {
             ]
         });
 
-        peer.onicecandidate = handleICECandidateEvent;
-        peer.ontrack = handleTrackEvent;
+        peer.onicecandidate = e => handleICECandidateEvent(e, userID);
+        peer.ontrack = e => handleTrackEvent(e, userID);
         peer.onnegotiationneeded = () => handleNegotiationNeededEvent(userID);
 
         return peer;
@@ -151,37 +182,38 @@ const Room = (props) => {
     }
 
     function handleNegotiationNeededEvent(userID){
-        peerRef.current.createOffer().then(offer => {
-            return peerRef.current.setLocalDescription(offer)
+        peersRef.current[userID].createOffer().then(offer => {
+            return peersRef.current[userID].setLocalDescription(offer)
         }).then(() => {
             const payload = {
                 target:userID,
                 caller: socketRef.current.id,
-                sdp: peerRef.current.localDescription
+                sdp: peersRef.current[userID].localDescription
             }
             socketRef.current.emit('offer', payload)
         }).catch(e => console.log(e))
     }
 
-    function handleRecieveCall(incoming){
-        peerRef.current = createPeer()
-        peerRef.current.ondatachannel = (e) => {
+    function handleRecieveCall(incoming){      
+        
+        peersRef.current[incoming.caller] = createPeer(incoming.caller)
+        /* peerRef.current.ondatachannel = (e) => {
             sendChannel.current = e.channel
             sendChannel.current.onmessage = handleRecieveMessage
-        }
+        } */
 
         const desc = new RTCSessionDescription(incoming.sdp)
-        peerRef.current.setRemoteDescription(desc)
+        peersRef.current[incoming.caller].setRemoteDescription(desc)
         .then(()=> {
-            userStream.current.getTracks().forEach(track => peerRef.current.addTrack(track, userStream.current))
+            userStream.current.getTracks().forEach(track => peersRef.current[incoming.caller].addTrack(track, userStream.current))
         })
-        .then(() => { return peerRef.current.createAnswer() })
-        .then(answer => { return peerRef.current.setLocalDescription(answer) })
+        .then(() => { return peersRef.current[incoming.caller].createAnswer() })
+        .then(answer => { return peersRef.current[incoming.caller].setLocalDescription(answer) })
         .then(() => { 
             const payload = {
                 target:incoming.caller,
                 caller: socketRef.current.id,
-                sdp: peerRef.current.localDescription
+                sdp: peersRef.current[incoming.caller].localDescription
             }
             socketRef.current.emit('answer', payload) 
         })
@@ -190,28 +222,37 @@ const Room = (props) => {
 
     function handleAnswer(message){
         const desc = new RTCSessionDescription(message.sdp)
-        peerRef.current.setRemoteDescription(desc)
+        peersRef.current[message.caller].setRemoteDescription(desc)
     }
 
-    function handleICECandidateEvent(e) {
+    function handleICECandidateEvent(e,userID) {
         if (e.candidate) {
             const payload = {
-                target: otherUser.current,
+                target: userID,
                 candidate: e.candidate,
+                caller: socketRef.current.id,
             }
             socketRef.current.emit("ice-candidate", payload);
         }
     }
 
     function handleNewICECandidateMsg(incoming) {
-        const candidate = new RTCIceCandidate(incoming);
-
-        peerRef.current.addIceCandidate(candidate)
+        const candidate = new RTCIceCandidate(incoming.candidate);
+        peersRef.current[incoming.caller].addIceCandidate(candidate)
             .catch(e => console.log(e));
     }
 
-    function handleTrackEvent(e){
-        partnerVideo.current.srcObject = e.streams[0]
+    function handleTrackEvent(e,userID){
+        setPartnerVideos(pvideos =>  {
+            const p = {}
+
+            Object.keys(pvideos).map(key => {
+                p[key] = pvideos[key]
+            }) 
+
+            p[userID]= {stream : e.streams[0], ref: createRef()}
+            return p
+        })
     }
 
     function renderMessage(message, index) {
@@ -234,16 +275,16 @@ const Room = (props) => {
         )
     }
 
+    let renderVideo = Object.keys(partnerVideos).map(key => {
+        return (
+            <video width="300" autoPlay ref={partnerVideos[key].ref} key={key} />
+        )
+    })
+
     return (
         <div>
-            <video autoPlay ref={userVideo} />
-            <video autoPlay ref={partnerVideo} />
-
-            <Messages>
-                {messages.map(renderMessage)}
-            </Messages>
-            <MessageBox value={text} onChange={handleChange} placeholder="Say something....." />
-            <Button onClick={sendMessage}>Send..</Button>
+            <video width="300" muted autoPlay ref={userVideo} />
+            {renderVideo}
         </div>
     )
 }
