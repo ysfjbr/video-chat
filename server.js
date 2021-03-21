@@ -17,7 +17,6 @@ io.on('connection', socket => {
             rooms[roomID] = [socket.id]
         }
         emitOtherUsers(roomID,'user joined')
-        //console.log(rooms);
     })
 
     socket.on('offer', payload => {
@@ -29,7 +28,6 @@ io.on('connection', socket => {
     })
 
     socket.on('ice-candidate', incoming => {
-        //console.log('ice-candidate',incoming);
         io.to(incoming.target).emit('ice-candidate', {candidate : incoming.candidate, caller: incoming.caller })
     })
 
@@ -52,9 +50,6 @@ io.on('connection', socket => {
             }
 
             emitOtherUsers(roomID, 'user gone')
-            
-            /* if(activeCalls[key].from.socket === socket.id || activeCalls[key].to.socket === socket.id )
-                stopCall(key) */
         })
     }
 

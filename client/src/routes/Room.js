@@ -5,7 +5,8 @@ import styled from "styled-components";
 
 const Container = styled.div`
     height: 100vh;
-    width: 50%;
+    width: 100%;
+    max-width: 800px;
     margin: auto;
     display: flex;
     flex-direction: column;
@@ -77,10 +78,12 @@ const Room = (props) => {
     const peersRef = useRef([])
     const socketRef = useRef()
     const otherUsers = useRef([])
+    
     const userStream = useRef()
-    const sendChannel = useRef()
+    //const sendChannel = useRef()
     const [text, setText] = useState("");
     const [partnerVideos, setPartnerVideos] = useState({})
+    const [sendChannels, setSendChannels] = useState({})
     const [messages, setMessages] = useState([])
 
     useEffect(() => {
@@ -143,8 +146,22 @@ const Room = (props) => {
     function callUser(userID) {
         peersRef.current[userID] = createPeer(userID);
         userStream.current.getTracks().forEach(track => peersRef.current[userID].addTrack(track, userStream.current));
-        //sendChannel.current = peersRef.current[userID].createDataChannel('sendChannel')
-        //sendChannel.current.onmessage = handleRecieveMessage
+        //sendChannels.current[userID] = 
+        //sendChannels.current[userID]
+
+        setSendChannels(channels => {
+            const p = {}
+
+            Object.keys(channels).map(key => {
+                p[key] = channels[key]
+            }) 
+
+            p[userID]= peersRef.current[userID].createDataChannel('sendChannel')
+            p[userID].onmessage = handleRecieveMessage
+            return p
+        })
+
+        //console.log('fffffffffffffffffff',sendChannels.current);
     }
 
     function createPeer(userID) {
@@ -164,16 +181,18 @@ const Room = (props) => {
         peer.onicecandidate = e => handleICECandidateEvent(e, userID);
         peer.ontrack = e => handleTrackEvent(e, userID);
         peer.onnegotiationneeded = () => handleNegotiationNeededEvent(userID);
-
+        
         return peer;
     }
 
     function handleRecieveMessage(e){
+        console.log("msssfg", e.data);
         setMessages(messages => [ ...messages, { yours: false, value: e.data}])
     }
 
     function sendMessage(){
-        sendChannel.current.send(text)
+        //console.log(sendChannels.length);
+        Object.keys(sendChannels).map(key => sendChannels[key].send(text))
         setMessages(messages => [ ...messages, { yours: true, value: text}])
     }
 
@@ -197,10 +216,27 @@ const Room = (props) => {
     function handleRecieveCall(incoming){      
         
         peersRef.current[incoming.caller] = createPeer(incoming.caller)
-        /* peerRef.current.ondatachannel = (e) => {
-            sendChannel.current = e.channel
-            sendChannel.current.onmessage = handleRecieveMessage
-        } */
+
+        peersRef.current[incoming.caller].ondatachannel = (e) => {
+            //sendChannels.current[incoming.caller] = e.channel
+            //sendChannels.current[incoming.caller].onmessage = handleRecieveMessage
+            setSendChannels(channels => {
+                const p = {}
+    
+                Object.keys(channels).map(key => {
+                    p[key] = channels[key]
+                }) 
+    
+                p[incoming.caller]= e.channel
+                p[incoming.caller].onmessage = handleRecieveMessage
+                return p
+            })
+        }
+
+        
+
+
+        //console.log('fffffffffffffffffff',sendChannels.current);
 
         const desc = new RTCSessionDescription(incoming.sdp)
         peersRef.current[incoming.caller].setRemoteDescription(desc)
@@ -282,10 +318,17 @@ const Room = (props) => {
     })
 
     return (
-        <div>
+        <Container>
             <video width="300" muted autoPlay ref={userVideo} />
             {renderVideo}
-        </div>
+
+            <Messages>
+                {messages.map(renderMessage)}
+            </Messages>
+            <MessageBox value={text} onChange={handleChange} placeholder="Say something....." />
+            <Button onClick={sendMessage}>Send..</Button>
+        </Container>
+
     )
 }
 
