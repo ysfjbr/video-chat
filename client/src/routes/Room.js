@@ -4,19 +4,34 @@ import styled from "styled-components";
  
 
 const Container = styled.div`
-    height: 100vh;
     width: 100%;
-    max-width: 800px;
     margin: auto;
-    display: flex;
     flex-direction: column;
-    align-items: center;
+    align-items: left;
+`;
+
+const Videos = styled.div`
+    width: calc(100% - 400px);
+    height: 100%;
+`;
+
+const Video = styled.div`
+    border-radius: 5px;
+    margin: 10px;
+`;
+
+const MChat = styled.div`
+    width:  400px;
+    position: fixed;
+    height: 100%;
+    border-left: 1px solid black;
+    right:0;
+    top:0;
 `;
 
 const Messages = styled.div`
     width: 100%;
     height: 60%;
-    border: 1px solid black;
     margin-top: 10px;
     overflow: scroll;
 `;
@@ -27,15 +42,13 @@ const MessageBox = styled.textarea`
 `;
 
 const Button = styled.div`
-    width: 50%;
-    border: 1px solid black;
-    margin-top: 15px;
-    height: 5%;
     border-radius: 5px;
     cursor: pointer;
     background-color: black;
     color: white;
     font-size: 18px;
+    padding: 10px;
+    margin: 10px;
 `;
 
 const MyRow = styled.div`
@@ -52,8 +65,6 @@ const MyMessage = styled.div`
   padding: 10px;
   margin-right: 5px;
   text-align: center;
-  border-top-right-radius: 10%;
-  border-bottom-right-radius: 10%;
 `;
 
 const PartnerRow = styled(MyRow)`
@@ -68,8 +79,6 @@ const PartnerMessage = styled.div`
   padding: 10px;
   margin-left: 5px;
   text-align: center;
-  border-top-left-radius: 10%;
-  border-bottom-left-radius: 10%;
 `;
 
 const Room = (props) => {
@@ -80,7 +89,6 @@ const Room = (props) => {
     const otherUsers = useRef([])
     
     const userStream = useRef()
-    //const sendChannel = useRef()
     const [text, setText] = useState("");
     const [partnerVideos, setPartnerVideos] = useState({})
     const [sendChannels, setSendChannels] = useState({})
@@ -101,8 +109,6 @@ const Room = (props) => {
                 users.map(userID => {
                     if(!otherUsers.current.includes(userID)) callUser(userID)
                 });
-
-                //setPartnerVideos(pvideos => pvideos.splice({id:userID, stream : e.streams[0], ref: createRef() }))
 
                 otherUsers.current = users;
             });
@@ -146,8 +152,6 @@ const Room = (props) => {
     function callUser(userID) {
         peersRef.current[userID] = createPeer(userID);
         userStream.current.getTracks().forEach(track => peersRef.current[userID].addTrack(track, userStream.current));
-        //sendChannels.current[userID] = 
-        //sendChannels.current[userID]
 
         setSendChannels(channels => {
             const p = {}
@@ -160,8 +164,6 @@ const Room = (props) => {
             p[userID].onmessage = handleRecieveMessage
             return p
         })
-
-        //console.log('fffffffffffffffffff',sendChannels.current);
     }
 
     function createPeer(userID) {
@@ -194,6 +196,7 @@ const Room = (props) => {
         //console.log(sendChannels.length);
         Object.keys(sendChannels).map(key => sendChannels[key].send(text))
         setMessages(messages => [ ...messages, { yours: true, value: text}])
+        setText("");
     }
 
     function handleChange(e) {
@@ -218,8 +221,6 @@ const Room = (props) => {
         peersRef.current[incoming.caller] = createPeer(incoming.caller)
 
         peersRef.current[incoming.caller].ondatachannel = (e) => {
-            //sendChannels.current[incoming.caller] = e.channel
-            //sendChannels.current[incoming.caller].onmessage = handleRecieveMessage
             setSendChannels(channels => {
                 const p = {}
     
@@ -232,11 +233,6 @@ const Room = (props) => {
                 return p
             })
         }
-
-        
-
-
-        //console.log('fffffffffffffffffff',sendChannels.current);
 
         const desc = new RTCSessionDescription(incoming.sdp)
         peersRef.current[incoming.caller].setRemoteDescription(desc)
@@ -313,20 +309,23 @@ const Room = (props) => {
 
     let renderVideo = Object.keys(partnerVideos).map(key => {
         return (
-            <video width="300" autoPlay ref={partnerVideos[key].ref} key={key} />
+                <video className="video" width="300" autoPlay ref={partnerVideos[key].ref} key={key} />
         )
     })
 
     return (
         <Container>
-            <video width="300" muted autoPlay ref={userVideo} />
-            {renderVideo}
-
-            <Messages>
-                {messages.map(renderMessage)}
-            </Messages>
-            <MessageBox value={text} onChange={handleChange} placeholder="Say something....." />
-            <Button onClick={sendMessage}>Send..</Button>
+            <Videos>
+                <video className="video" width="300" muted autoPlay ref={userVideo} />
+                {renderVideo}
+            </Videos>
+            <MChat>
+                <Messages>
+                    {messages.map(renderMessage)}
+                </Messages>
+                <MessageBox value={text} onChange={handleChange} placeholder="Say something....." />
+                <Button onClick={sendMessage}>Send..</Button>
+            </MChat>
         </Container>
 
     )
